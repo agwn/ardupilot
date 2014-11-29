@@ -25,7 +25,6 @@ static bool guided_init(bool ignore_checks)
         set_auto_yaw_mode(get_default_auto_yaw_mode(false));
         // start in position control mode
         guided_pos_control_start();
-
         return true;
     }else{
         return false;
@@ -145,7 +144,8 @@ static void guided_run()
 {
     // if not auto armed set throttle to zero and exit immediately
     if(!ap.auto_armed) {
-        wp_nav.init_loiter_target();
+        // initialise wpnav targets
+        wp_nav.shift_wp_origin_to_current_pos();
         attitude_control.relax_bf_rate_controller();
         attitude_control.set_yaw_target_to_current_heading();
         attitude_control.set_throttle_out(0, false);
@@ -228,7 +228,8 @@ static void guided_pos_control_run()
 
     // when landed reset targets and output zero throttle
     if (ap.land_complete) {
-        wp_nav.init_loiter_target();
+        // initialise wpnav targets
+        wp_nav.shift_wp_origin_to_current_pos();
         attitude_control.relax_bf_rate_controller();
         attitude_control.set_yaw_target_to_current_heading();
         attitude_control.set_throttle_out(0, false);
