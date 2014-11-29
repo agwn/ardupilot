@@ -18,6 +18,7 @@ static bool guided_init(bool ignore_checks)
         set_auto_yaw_mode(get_default_auto_yaw_mode(false));
         // start in position control mode
         guided_pos_control_start();
+
         return true;
     }else{
         return false;
@@ -107,7 +108,7 @@ static void guided_run()
 {
     // if not auto armed set throttle to zero and exit immediately
     if(!ap.auto_armed) {
-        // To-Do: reset waypoint controller?
+        wp_nav.init_loiter_target();
         attitude_control.relax_bf_rate_controller();
         attitude_control.set_yaw_target_to_current_heading();
         attitude_control.set_throttle_out(0, false);
@@ -181,11 +182,19 @@ static void guided_pos_control_run()
         }
     }
 
-    // run waypoint controller
-    wp_nav.update_wpnav();
+    // when landed reset targets and output zero throttle
+    if (ap.land_complete) {
+        wp_nav.init_loiter_target();
+        attitude_control.relax_bf_rate_controller();
+        attitude_control.set_yaw_target_to_current_heading();
+        attitude_control.set_throttle_out(0, false);
+    }else{
+        // run waypoint controller
+        wp_nav.update_wpnav();
 
-    // call z-axis position controller (wpnav should have already updated it's alt target)
-    pos_control.update_z_controller();
+        // call z-axis position controller (wpnav should have already updated it's alt target)
+        pos_control.update_z_controller();
+    }
 
     // call attitude controller
     if (auto_yaw_mode == AUTO_YAW_HOLD) {
