@@ -2,11 +2,11 @@
  *	@brief MAVLink comm protocol generated from ardupilotmega.xml
  *	@see http://qgroundcontrol.org/mavlink/
  */
-#ifndef ARDUPILOTMEGA_H
-#define ARDUPILOTMEGA_H
+#ifndef MAVLINK_ARDUPILOTMEGA_H
+#define MAVLINK_ARDUPILOTMEGA_H
 
 #ifndef MAVLINK_H
-    #error Wrong include order: ARDUPILOTMEGA.H MUST NOT BE DIRECTLY USED. Include mavlink.h from the same directory instead or set ALL AND EVERY defines from MAVLINK.H manually accordingly, including the #define MAVLINK_H call.
+    #error Wrong include order: MAVLINK_ARDUPILOTMEGA.H MUST NOT BE DIRECTLY USED. Include mavlink.h from the same directory instead or set ALL AND EVERY defines from MAVLINK.H manually accordingly, including the #define MAVLINK_H call.
 #endif
 
 #ifdef __cplusplus
@@ -49,6 +49,8 @@ typedef enum MAV_CMD
 	MAV_CMD_NAV_ROI=80, /* Sets the region of interest (ROI) for a sensor set or the vehicle itself. This can then be used by the vehicles control system to control the vehicle attitude and the attitude of various sensors such as cameras. |Region of intereset mode. (see MAV_ROI enum)| MISSION index/ target ID. (see MAV_ROI enum)| ROI index (allows a vehicle to manage multiple ROI's)| Empty| x the location of the fixed ROI (see MAV_FRAME)| y| z|  */
 	MAV_CMD_NAV_PATHPLANNING=81, /* Control autonomous path planning on the MAV. |0: Disable local obstacle avoidance / local path planning (without resetting map), 1: Enable local path planning, 2: Enable and reset local path planning| 0: Disable full path planning (without resetting map), 1: Enable, 2: Enable and reset map/occupancy grid, 3: Enable and reset planned route, but not occupancy grid| Empty| Yaw angle at goal, in compass degrees, [0..360]| Latitude/X of goal| Longitude/Y of goal| Altitude/Z of goal|  */
 	MAV_CMD_NAV_SPLINE_WAYPOINT=82, /* Navigate to MISSION using a spline path. |Hold time in decimal seconds. (ignored by fixed wing, time to stay at MISSION for rotary wing)| Empty| Empty| Empty| Latitude/X of goal| Longitude/Y of goal| Altitude/Z of goal|  */
+	MAV_CMD_NAV_GUIDED=90, /* Pass control to an external controller. |Timeout in seconds.  The maximum amount of time that the external controller will be allowed to control the vehicle.  0 means no timeout| Altitude min. If vehicle moves below this altitude the command will be aborted and the mission will continue.  0 for no lower alt limit| Altitude max. If vehicle moves above this altitude the command will be aborted and the mission will continue.  0 for no upper alt limit| Horizontal move limit. If vehicle moves more than this distance from it's location at the moment the command was begun, the command will be aborted and the mission will continue.  0 for no horizontal movement limit| Empty| Empty| Empty|  */
+	MAV_CMD_NAV_VELOCITY=91, /* Navigate at the specified velocity |coordinate_frame - see MAV_FRAME enum| Empty| Empty| Empty| x velocity| y velocity| z velocity|  */
 	MAV_CMD_NAV_GUIDED_ENABLE=92, /* hand control over to an external controller |On / Off (> 0.5f on)| Empty| Empty| Empty| Empty| Empty| Empty|  */
 	MAV_CMD_NAV_LAST=95, /* NOP - This command is only used to mark the upper limit of the NAV/ACTION commands in the enumeration |Empty| Empty| Empty| Empty| Empty| Empty| Empty|  */
 	MAV_CMD_CONDITION_DELAY=112, /* Delay mission state machine. |Delay in seconds (decimal)| Empty| Empty| Empty| Empty| Empty| Empty|  */
@@ -242,4 +244,4 @@ typedef enum CAMERA_FEEDBACK_FLAGS
 #ifdef __cplusplus
 }
 #endif // __cplusplus
-#endif // ARDUPILOTMEGA_H
+#endif // MAVLINK_ARDUPILOTMEGA_H

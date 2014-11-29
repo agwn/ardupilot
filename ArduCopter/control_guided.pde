@@ -3,7 +3,6 @@
 /*
  * control_guided.pde - init and run calls for guided flight mode
  */
-
 #ifndef GUIDED_LOOK_AT_TARGET_MIN_DISTANCE_CM
  # define GUIDED_LOOK_AT_TARGET_MIN_DISTANCE_CM     500     // point nose at target if it is more than 5m away
 #endif
@@ -205,6 +204,7 @@ static void guided_pos_control_run()
     }
 }
 
+#ifdef NAV_GUIDED == ENABLED
 // guided_vel_control_run - runs the guided velocity controller
 // called from guided_run
 static void guided_vel_control_run()
@@ -231,3 +231,4 @@ static void guided_vel_control_run()
         attitude_control.angle_ef_roll_pitch_yaw(pos_control.get_roll(), pos_control.get_pitch(), get_auto_heading(), true);
     }
 }
+#endif
