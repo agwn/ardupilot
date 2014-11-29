@@ -30,6 +30,7 @@
 #define HAL_BOARD_SUBTYPE_LINUX_ERLE     1001
 #define HAL_BOARD_SUBTYPE_LINUX_PXF      1002
 #define HAL_BOARD_SUBTYPE_LINUX_NAVIO    1003
+#define HAL_BOARD_SUBTYPE_LINUX_ZYNQ     1004
 
 /**
    HAL PX4 sub-types, starting at 2000
@@ -52,7 +53,7 @@
 #define HAL_INS_L3G4200D 6
 #define HAL_INS_VRBRAIN  7
 #define HAL_INS_MPU9250  8
-#define HAL_INS_L3GD20   9
+#define HAL_INS_L3GD20   9   
 
 // barometer driver types
 #define HAL_BARO_BMP085     1
@@ -195,6 +196,13 @@
 #define HAL_INS_DEFAULT HAL_INS_MPU9250
 #define HAL_BARO_DEFAULT HAL_BARO_MS5611
 #define HAL_COMPASS_DEFAULT HAL_COMPASS_HIL
+#elif CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_ZYNQ
+#define HAL_BOARD_LOG_DIRECTORY "/var/APM/logs"
+#define HAL_BOARD_TERRAIN_DIRECTORY "/var/APM/terrain"
+// Stub the sensors out for now, at least we can build and run
+#define HAL_INS_DEFAULT HAL_INS_HIL
+#define HAL_BARO_DEFAULT HAL_BARO_HIL
+#define HAL_COMPASS_DEFAULT HAL_COMPASS_HIL
 #else
 #error "no Linux board subtype set"
 #endif
@@ -215,9 +223,10 @@
 #define HAL_BOARD_NAME "VRBRAIN"
 #define HAL_CPU_CLASS HAL_CPU_CLASS_150
 #define HAL_OS_POSIX_IO 1
-#define HAL_STORAGE_SIZE            4096
+#define HAL_STORAGE_SIZE            8192
 #define HAL_STORAGE_SIZE_AVAILABLE  HAL_STORAGE_SIZE
 #define HAL_BOARD_LOG_DIRECTORY "/fs/microsd/APM/LOGS"
+#define HAL_BOARD_TERRAIN_DIRECTORY "/fs/microsd/APM/TERRAIN"
 #define HAL_INS_DEFAULT HAL_INS_VRBRAIN
 #define HAL_BARO_DEFAULT HAL_BARO_VRBRAIN
 #define HAL_COMPASS_DEFAULT HAL_COMPASS_VRBRAIN

@@ -12,6 +12,9 @@ static void do_within_distance(const AP_Mission::Mission_Command& cmd);
 static void do_change_alt(const AP_Mission::Mission_Command& cmd);
 static void do_change_speed(const AP_Mission::Mission_Command& cmd);
 static void do_set_home(const AP_Mission::Mission_Command& cmd);
+static void do_continue_and_change_alt(const AP_Mission::Mission_Command& cmd);
+static bool verify_nav_wp(const AP_Mission::Mission_Command& cmd);
+
 
 /********************************************************************************/
 // Command Event Handlers
@@ -37,6 +40,9 @@ start_command(const AP_Mission::Mission_Command& cmd)
         // set takeoff_complete to true so we don't add extra evevator
         // except in a takeoff
         auto_state.takeoff_complete = true;
+
+        // if a go around had been commanded, clear it now.
+        auto_state.commanded_go_around = false;
         
         gcs_send_text_fmt(PSTR("Executing nav command ID #%i"),cmd.id);
     } else {
@@ -71,6 +77,10 @@ start_command(const AP_Mission::Mission_Command& cmd)
 
     case MAV_CMD_NAV_RETURN_TO_LAUNCH:
         set_mode(RTL);
+        break;
+
+    case MAV_CMD_NAV_CONTINUE_AND_CHANGE_ALT:
+        do_continue_and_change_alt(cmd);
         break;
 
     // Conditional commands
@@ -120,6 +130,21 @@ start_command(const AP_Mission::Mission_Command& cmd)
             auto_state.inverted_flight = (bool)cmd.p1;
             gcs_send_text_fmt(PSTR("Set inverted %u"), cmd.p1);
         }
+        break;
+
+    case MAV_CMD_DO_LAND_START:
+        //ensure go around hasn't been set
+        auto_state.commanded_go_around = false;
+        break;
+
+    case MAV_CMD_DO_FENCE_ENABLE:
+#if GEOFENCE_ENABLED == ENABLED
+        if (!geofence_set_enabled((bool) cmd.p1, AUTO_TOGGLED)) {
+            gcs_send_text_fmt(PSTR("Unable to set fence enabled state to %u"), cmd.p1);
+        } else {
+            gcs_send_text_fmt(PSTR("Set fence enabled state to %u"), cmd.p1);
+        }    
+#endif
         break;
 
 #if CAMERA == ENABLED
@@ -188,7 +213,7 @@ static bool verify_command(const AP_Mission::Mission_Command& cmd)        // Ret
         return verify_land();
 
     case MAV_CMD_NAV_WAYPOINT:
-        return verify_nav_wp();
+        return verify_nav_wp(cmd);
 
     case MAV_CMD_NAV_LOITER_UNLIM:
         return verify_loiter_unlim();
@@ -201,6 +226,9 @@ static bool verify_command(const AP_Mission::Mission_Command& cmd)        // Ret
 
     case MAV_CMD_NAV_RETURN_TO_LAUNCH:
         return verify_RTL();
+
+    case MAV_CMD_NAV_CONTINUE_AND_CHANGE_ALT:
+        return verify_continue_and_change_alt();
 
     // Conditional commands
 
@@ -231,6 +259,8 @@ static bool verify_command(const AP_Mission::Mission_Command& cmd)        // Ret
     case MAV_CMD_DO_MOUNT_CONFIGURE:
     case MAV_CMD_DO_MOUNT_CONTROL:
     case MAV_CMD_DO_INVERTED_FLIGHT:
+    case MAV_CMD_DO_LAND_START:
+    case MAV_CMD_DO_FENCE_ENABLE:
         return true;
 
     default:
@@ -280,8 +310,13 @@ static void do_takeoff(const AP_Mission::Mission_Command& cmd)
     auto_state.takeoff_altitude_cm     = next_WP_loc.alt;
     next_WP_loc.lat = home.lat + 10;
     next_WP_loc.lng = home.lng + 10;
+    auto_state.takeoff_speed_time_ms = 0;
     auto_state.takeoff_complete = false;                            // set flag to use gps ground course during TO.  IMU will be doing yaw drift correction
     // Flag also used to override "on the ground" throttle disable
+
+    // zero locked course
+    steer_state.locked_course_err = 0;
+    
 }
 
 static void do_nav_wp(const AP_Mission::Mission_Command& cmd)
@@ -291,6 +326,7 @@ static void do_nav_wp(const AP_Mission::Mission_Command& cmd)
 
 static void do_land(const AP_Mission::Mission_Command& cmd)
 {
+    auto_state.commanded_go_around = false;
     set_next_WP(cmd.content.location);
 }
 
@@ -325,16 +361,38 @@ static void do_loiter_time(const AP_Mission::Mission_Command& cmd)
     loiter_set_direction_wp(cmd);
 }
 
+static void do_continue_and_change_alt(const AP_Mission::Mission_Command& cmd)
+{
+    next_WP_loc.alt = cmd.content.location.alt + home.alt;
+}
+
 /********************************************************************************/
 //  Verify Nav (Must) commands
 /********************************************************************************/
 static bool verify_takeoff()
 {
-    if (ahrs.yaw_initialised()) {
-        if (steer_state.hold_course_cd == -1) {
-            // save our current course to take off
-            steer_state.hold_course_cd = ahrs.yaw_sensor;
-            gcs_send_text_fmt(PSTR("Holding course %ld"), steer_state.hold_course_cd);
+    if (ahrs.yaw_initialised() && steer_state.hold_course_cd == -1) {
+        const float min_gps_speed = 5;
+        if (auto_state.takeoff_speed_time_ms == 0 && 
+            gps.status() >= AP_GPS::GPS_OK_FIX_3D && 
+            gps.ground_speed() > min_gps_speed) {
+            auto_state.takeoff_speed_time_ms = hal.scheduler->millis();
+        }
+        if (auto_state.takeoff_speed_time_ms != 0 &&
+            hal.scheduler->millis() - auto_state.takeoff_speed_time_ms >= 2000) {
+            // once we reach sufficient speed for good GPS course
+            // estimation we save our current GPS ground course
+            // corrected for summed yaw to set the take off
+            // course. This keeps wings level until we are ready to
+            // rotate, and also allows us to cope with arbitary
+            // compass errors for auto takeoff
+            float takeoff_course = wrap_PI(radians(gps.ground_course_cd()*0.01)) - steer_state.locked_course_err;
+            takeoff_course = wrap_PI(takeoff_course);
+            steer_state.hold_course_cd = wrap_360_cd(degrees(takeoff_course)*100);
+            gcs_send_text_fmt(PSTR("Holding course %ld at %.1fm/s (%.1f)"), 
+                              steer_state.hold_course_cd,
+                              gps.ground_speed(),
+                              degrees(steer_state.locked_course_err));
         }
     }
 
@@ -374,7 +432,7 @@ static bool verify_takeoff()
   update navigation for normal mission waypoints. Return true when the
   waypoint is complete
  */
-static bool verify_nav_wp()
+static bool verify_nav_wp(const AP_Mission::Mission_Command& cmd)
 {
     steer_state.hold_course_cd = -1;
 
@@ -392,8 +450,14 @@ static bool verify_nav_wp()
         }
         return false;
     }
+
+    float acceptance_distance = nav_controller->turn_distance(g.waypoint_radius, auto_state.next_turn_angle);
+    if (cmd.p1 > 0) {
+        // allow user to override acceptance radius
+        acceptance_distance = cmd.p1;
+    }
     
-    if (wp_distance <= nav_controller->turn_distance(g.waypoint_radius, auto_state.next_turn_angle)) {
+    if (wp_distance <= acceptance_distance) {
         gcs_send_text_fmt(PSTR("Reached Waypoint #%i dist %um"),
                           (unsigned)mission.get_current_nav_cmd().index,
                           (unsigned)get_distance(current_loc, next_WP_loc));
@@ -454,6 +518,25 @@ static bool verify_RTL()
     } else {
         return false;
 	}
+}
+
+static bool verify_continue_and_change_alt()
+{
+    if (abs(adjusted_altitude_cm() - next_WP_loc.alt) <= 500) {
+        return true;
+    }
+   
+    // Is the next_WP less than 200 m away?
+    if (get_distance(current_loc, next_WP_loc) < 200.f) {
+        //push another 300 m down the line
+        int32_t next_wp_bearing_cd = get_bearing_cd(prev_WP_loc, next_WP_loc);
+        location_update(next_WP_loc, next_wp_bearing_cd * 0.01f, 300.f);
+    }
+
+    //keep flying the same course
+    nav_controller->update_waypoint(prev_WP_loc, next_WP_loc);
+
+    return false;
 }
 
 /********************************************************************************/
@@ -573,6 +656,7 @@ static void do_take_picture()
 {
 #if CAMERA == ENABLED
     camera.trigger_pic();
+    gcs_send_message(MSG_CAMERA_FEEDBACK);
     if (should_log(MASK_LOG_CAMERA)) {
         DataFlash.Log_Write_Camera(ahrs, gps, current_loc);
     }

@@ -1,14 +1,10 @@
 
-#ifndef __AP_HAL_LINUX_RCOUTPUT_H__
-#define __AP_HAL_LINUX_RCOUTPUT_H__
+#ifndef __AP_HAL_LINUX_RCOUTPUT_ZYNQ_H__
+#define __AP_HAL_LINUX_RCOUTPUT_ZYNQ_H__
 
 #include <AP_HAL_Linux.h>
-#define PRUSS_SHAREDRAM_BASE     0x4a310000
-#define MAX_PWMS                 12
-#define PWM_CMD_MAGIC            0xf00fbaaf
-#define PWM_REPLY_MAGIC          0xbaaff00f
-#define TICK_PER_US              200
-#define TICK_PER_S               200000000
+#define RCOUT_ZYNQ_PWM_BASE	 0x43c00000	//FIXME hardcoding is the devil's work
+#define MAX_PWMS                 8	//FIXME
 #define PWM_CMD_CONFIG	         0	/* full configuration in one go */
 #define PWM_CMD_ENABLE	         1	/* enable a pwm */
 #define PWM_CMD_DISABLE	         2	/* disable a pwm */
@@ -17,7 +13,8 @@
 #define PWM_CMD_CLR	         5	/* clr a pwm output explicitly */
 #define PWM_CMD_TEST	         6	/* various crap */
 
-class Linux::LinuxRCOutput : public AP_HAL::RCOutput {
+
+class Linux::LinuxRCOutput_ZYNQ : public AP_HAL::RCOutput {
     void     init(void* machtnichts);
     void     set_freq(uint32_t chmask, uint16_t freq_hz);
     uint16_t get_freq(uint8_t ch);
@@ -29,15 +26,18 @@ class Linux::LinuxRCOutput : public AP_HAL::RCOutput {
     void     read(uint16_t* period_us, uint8_t len);
 
 private:
-    struct pwm_cmd {
-        uint32_t magic;
-        uint32_t enmask;     /* enable mask */
-        uint32_t offmsk;     /* state when pwm is off */
-        uint32_t periodhi[MAX_PWMS][2];
-        uint32_t hilo_read[MAX_PWMS][2];
-        uint32_t enmask_read;
-    }*sharedMem_cmd;
+    static const int TICK_PER_US=100;
+    static const int TICK_PER_S=100000000;
 
+    // Period|Hi 32 bits each
+    struct s_period_hi {
+        uint32_t period;
+        uint32_t hi;
+    };
+    struct pwm_cmd {
+        struct s_period_hi periodhi[MAX_PWMS];
+    };
+    volatile struct pwm_cmd *sharedMem_cmd;
 };
 
-#endif // __AP_HAL_LINUX_RCOUTPUT_H__
+#endif // __AP_HAL_LINUX_RCOUTPUT_ZYNQ_H__

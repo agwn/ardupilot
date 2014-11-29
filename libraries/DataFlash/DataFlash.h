@@ -14,6 +14,11 @@
 #include <AP_AHRS.h>
 #include <stdint.h>
 
+#if CONFIG_HAL_BOARD == HAL_BOARD_PX4
+#include <uORB/topics/esc_status.h>
+#endif
+
+
 #if HAL_CPU_CLASS < HAL_CPU_CLASS_75 && defined(APM_BUILD_DIRECTORY)
   #if (APM_BUILD_TYPE(APM_BUILD_ArduCopter) || defined(__AVR_ATmega1280__))
     #define DATAFLASH_NO_CLI
@@ -71,6 +76,7 @@ public:
     void Log_Write_Message(const char *message);
     void Log_Write_Message_P(const prog_char_t *message);
     void Log_Write_Camera(const AP_AHRS &ahrs, const AP_GPS &gps, const Location &current_loc);
+    void Log_Write_ESC(void);
 
     bool logging_started(void) const { return log_write_started; }
 
@@ -255,6 +261,7 @@ struct PACKED log_BARO {
     float   altitude;
     float   pressure;
     int16_t temperature;
+    float   climbrate;
 };
 
 struct PACKED log_AHRS {
@@ -296,9 +303,9 @@ struct PACKED log_EKF1 {
 struct PACKED log_EKF2 {
     LOG_PACKET_HEADER;
     uint32_t time_ms;
-    int8_t accX;
-    int8_t accY;
-    int8_t accZ;
+    int8_t Ratio;
+    int8_t AZ1bias;
+    int8_t AZ2bias;
     int16_t windN;
     int16_t windE;
     int16_t magN;
@@ -337,7 +344,7 @@ struct PACKED log_EKF4 {
     int8_t  offsetNorth;
     int8_t  offsetEast;
     uint8_t faults;
-    uint8_t divergeRate;
+    uint8_t staticmode;
 };
 
 struct PACKED log_Cmd {
@@ -396,6 +403,47 @@ struct PACKED log_TERRAIN {
     uint16_t loaded;
 };
 
+/*
+  UBlox logging
+ */
+struct PACKED log_Ubx1 {
+    LOG_PACKET_HEADER;
+    uint32_t timestamp;
+    uint8_t  instance;
+    uint16_t noisePerMS;
+    uint8_t  jamInd;
+    uint8_t  aPower;
+    uint16_t agcCnt;
+};
+
+struct PACKED log_Ubx2 {
+    LOG_PACKET_HEADER;
+    uint32_t timestamp;
+    uint8_t  instance;
+    int8_t   ofsI;
+    uint8_t  magI;
+    int8_t   ofsQ;
+    uint8_t  magQ;
+};
+
+struct PACKED log_Ubx3 {
+    LOG_PACKET_HEADER;
+    uint32_t timestamp;
+    uint8_t  instance;
+    float hAcc;
+    float vAcc;
+    float sAcc;
+};
+
+struct PACKED log_Esc {
+    LOG_PACKET_HEADER;
+    uint32_t time_ms;     
+    int16_t rpm;
+    int16_t voltage;
+    int16_t current;
+    int16_t temperature;
+};
+
 // messages for all boards
 #define LOG_BASE_STRUCTURES \
     { LOG_FORMAT_MSG, sizeof(log_Format), \
@@ -413,7 +461,7 @@ struct PACKED log_TERRAIN {
     { LOG_RCOUT_MSG, sizeof(log_RCOUT), \
       "RCOU",  "Ihhhhhhhhhhhh",     "TimeMS,Ch1,Ch2,Ch3,Ch4,Ch5,Ch6,Ch7,Ch8,Ch9,Ch10,Ch11,Ch12" }, \
     { LOG_BARO_MSG, sizeof(log_BARO), \
-      "BARO",  "Iffc",     "TimeMS,Alt,Press,Temp" }, \
+      "BARO",  "Iffcf", "TimeMS,Alt,Press,Temp,CRt" }, \
     { LOG_POWR_MSG, sizeof(log_POWR), \
       "POWR","ICCH","TimeMS,Vcc,VServo,Flags" },  \
     { LOG_CMD_MSG, sizeof(log_Cmd), \
@@ -438,13 +486,35 @@ struct PACKED log_TERRAIN {
     { LOG_EKF1_MSG, sizeof(log_EKF1), \
       "EKF1","IccCffffffccc","TimeMS,Roll,Pitch,Yaw,VN,VE,VD,PN,PE,PD,GX,GY,GZ" }, \
     { LOG_EKF2_MSG, sizeof(log_EKF2), \
-      "EKF2","Ibbbcchhhhhh","TimeMS,AX,AY,AZ,VWN,VWE,MN,ME,MD,MX,MY,MZ" }, \
+      "EKF2","Ibbbcchhhhhh","TimeMS,Ratio,AZ1bias,AZ2bias,VWN,VWE,MN,ME,MD,MX,MY,MZ" }, \
     { LOG_EKF3_MSG, sizeof(log_EKF3), \
       "EKF3","Icccccchhhc","TimeMS,IVN,IVE,IVD,IPN,IPE,IPD,IMX,IMY,IMZ,IVT" }, \
     { LOG_EKF4_MSG, sizeof(log_EKF4), \
-      "EKF4","IcccccccbbBB","TimeMS,SV,SP,SH,SMX,SMY,SMZ,SVT,OFN,EFE,FS,DS" }, \
+      "EKF4","IcccccccbbBB","TimeMS,SV,SP,SH,SMX,SMY,SMZ,SVT,OFN,EFE,FS,StaticMode" }, \
     { LOG_TERRAIN_MSG, sizeof(log_TERRAIN), \
-      "TERR","IBLLHffHH","TimeMS,Status,Lat,Lng,Spacing,TerrH,CHeight,Pending,Loaded" }
+      "TERR","IBLLHffHH","TimeMS,Status,Lat,Lng,Spacing,TerrH,CHeight,Pending,Loaded" }, \
+    { LOG_UBX1_MSG, sizeof(log_Ubx1), \
+      "UBX1", "IBHBBH",  "TimeMS,Instance,noisePerMS,jamInd,aPower,agcCnt" }, \
+    { LOG_UBX2_MSG, sizeof(log_Ubx2), \
+      "UBX2", "IBbBbB", "TimeMS,Instance,ofsI,magI,ofsQ,magQ" }, \
+    { LOG_UBX3_MSG, sizeof(log_Ubx3), \
+      "UBX3", "IBfff", "TimeMS,Instance,hAcc,vAcc,sAcc" }, \
+    { LOG_ESC1_MSG, sizeof(log_Esc), \
+      "ESC1",  "Icccc", "TimeMS,RPM,Volt,Curr,Temp" }, \
+    { LOG_ESC2_MSG, sizeof(log_Esc), \
+      "ESC2",  "Icccc", "TimeMS,RPM,Volt,Curr,Temp" }, \
+    { LOG_ESC3_MSG, sizeof(log_Esc), \
+      "ESC3",  "Icccc", "TimeMS,RPM,Volt,Curr,Temp" }, \
+    { LOG_ESC4_MSG, sizeof(log_Esc), \
+      "ESC4",  "Icccc", "TimeMS,RPM,Volt,Curr,Temp" }, \
+    { LOG_ESC5_MSG, sizeof(log_Esc), \
+      "ESC5",  "Icccc", "TimeMS,RPM,Volt,Curr,Temp" }, \
+    { LOG_ESC6_MSG, sizeof(log_Esc), \
+      "ESC6",  "Icccc", "TimeMS,RPM,Volt,Curr,Temp" }, \
+    { LOG_ESC7_MSG, sizeof(log_Esc), \
+      "ESC7",  "Icccc", "TimeMS,RPM,Volt,Curr,Temp" }, \
+    { LOG_ESC8_MSG, sizeof(log_Esc), \
+      "ESC8",  "Icccc", "TimeMS,RPM,Volt,Curr,Temp" }
 
 #if HAL_CPU_CLASS >= HAL_CPU_CLASS_75
 #define LOG_COMMON_STRUCTURES LOG_BASE_STRUCTURES, LOG_EXTRA_STRUCTURES
@@ -478,6 +548,17 @@ struct PACKED log_TERRAIN {
 #define LOG_CAMERA_MSG    148
 #define LOG_IMU3_MSG	  149
 #define LOG_TERRAIN_MSG   150
+#define LOG_UBX1_MSG      151
+#define LOG_UBX2_MSG      152
+#define LOG_UBX3_MSG      153
+#define LOG_ESC1_MSG      154
+#define LOG_ESC2_MSG      155
+#define LOG_ESC3_MSG      156
+#define LOG_ESC4_MSG      157
+#define LOG_ESC5_MSG      158
+#define LOG_ESC6_MSG      159
+#define LOG_ESC7_MSG      160
+#define LOG_ESC8_MSG      161
 
 // message types 200 to 210 reversed for GPS driver use
 // message types 211 to 220 reversed for autotune use
