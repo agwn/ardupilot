@@ -160,6 +160,7 @@
 // AP_HAL to Arduino compatibility layer
 #include "compat.h"
 // Configuration
+#include "APM_Config.h"
 #include "defines.h"
 #include "config.h"
 #include "config_channels.h"

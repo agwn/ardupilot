@@ -195,9 +195,9 @@ enum AutoMode {
 // Guided modes
 enum GuidedMode {
     Guided_TakeOff,
-    Guided_WP
+    Guided_WP,
 #if NAV_GUIDED == ENABLED
-    ,Guided_Velocity
+    Guided_Velocity,
 #endif
 };
 
